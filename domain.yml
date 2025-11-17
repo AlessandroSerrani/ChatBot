@@ -1,1 +1,16 @@
+version: "3.1"
 
+intents:
+  - ask_hydro_instability
+  - out_of_scope
+
+responses:
+  utter_not_about_instability:
+  - text: "Hey! How are you?"
+
+actions:
+  - action_query_llama
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true

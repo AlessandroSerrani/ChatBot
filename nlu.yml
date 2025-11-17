@@ -1,1 +1,19 @@
+version: "3.1"
 
+nlu:
+- intent: ask_hydro_instability
+  examples: |
+    - Quali sono le cause principale del dissesto idrogeologico?
+    - Quali interventi si possono adottare per prevenire le frane?
+    - Cosa si intende con erosione del suolo?
+    - In che modo il cambiamento climatico influsce sulle alluvioni?
+    - Esistono incentivi per la messa in sicurezza del territorio?
+    - Che ruolo giocano le piante nella prevenzione delle frane?
+- intent: out_of_scope
+  examples: |
+    - What's the capital of France?
+    - Quale è la capitale della Francia?
+    - Dimmi una barzelletta.
+    - Tell me a joke.
+    - How old are you?
+    - Quanti anni hai? 
