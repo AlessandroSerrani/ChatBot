@@ -1,15 +1,11 @@
-
-# This files contains your custom actions which can be used to run
-# custom Python code.
-#
-# See this guide on how to implement these action:
-# https://rasa.com/docs/rasa/custom-actions
-
-
 from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
 import requests
 import json
+import time
+
+# SSE server endpoint
+SSE_PUSH_URL = "http://127.0.0.1:5006/push"
 
 class ActionQueryLlama(Action):
     def name(self):
@@ -18,36 +14,41 @@ class ActionQueryLlama(Action):
     def run(self, dispatcher, tracker, domain):
         user_message = tracker.latest_message.get("text")
 
-        # Call your LLaMA server API
         try:
+            # Call Ollama with streaming enabled
             response = requests.post(
-                    "http://localhost:11434/api/generate",
+                "http://localhost:11434/api/generate",
                 headers={"Content-Type": "application/json"},
-                json={
-                    "model": "llama3",
-                    "prompt": user_message
-                },
-                timeout=30
+                json={"model": "llama3", "prompt": user_message},
+                timeout=30,
+                stream=True  # Important: stream response line by line
             )
 
-            # Split the response into lines and parse each JSON object
-            answers = []
-            for line in response.text.splitlines():
-                if line.strip():  # skip empty lines
-                    try:
-                        obj = json.loads(line)
-                        if "response" in obj and obj["response"]:
-                            answers.append(obj["response"])
-                    except json.JSONDecodeError:
-                        # ignore lines that are not valid JSON
-                        pass
+            # Read lines as Ollama produces them
+            for line in response.iter_lines(decode_unicode=True):
+                if not line.strip():
+                    continue
 
-            # Join all partial responses
-            final_answer = "".join(answers) if answers else "No response from LLaMA."
-            dispatcher.utter_message(text=final_answer)
+                try:
+                    obj = json.loads(line)
+                    token = obj.get("response", "")
+                    if not token:
+                        continue
+
+                    # Push each token immediately to SSE
+                    requests.post(SSE_PUSH_URL, json={"token": token}, timeout=0.5)
+
+                    # Optional: small delay to create smooth typing effect
+                    time.sleep(0.01)
+
+                except json.JSONDecodeError:
+                    continue
+
+            # Optional: send empty final message via dispatcher
+            dispatcher.utter_message(text="")
 
         except Exception as e:
-            dispatcher.utter_message(text=f"Failed to connect to LLaMA API: {e}")
-
+            dispatcher.utter_message(text=f"Error contacting LLaMA: {e}")
 
         return []
+
