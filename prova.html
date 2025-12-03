@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat UI</title>
+  <link rel="stylesheet" href="stile.css" />
+  <style>
+    /* Solo stili aggiuntivi per la formattazione */
+    .bold-1 { font-weight: 600; }
+    .bold-2 { font-weight: 700; }
+    .bold-3 { font-weight: 800; }
+    .bold-4 { font-weight: 900; }
+    
+    /* Leggermente allargato */
+    .chat-box {
+      max-width: 1000px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    
+    .bubble {
+      max-width: 80%;
+    }
+  </style>
+</head>
+<body class="dark-mode">
+
+<!-- Go Back Button -->
+<button class="go-back-button" type="button" id="goBackBtn">
+  <div class="go-back-icon">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" height="25px" width="25px">
+      <path d="M224 480h640a32 32 0 1 1 0 64H224a32 32 0 0 1 0-64z" fill="#000000"></path>
+      <path d="m237.248 512 265.408 265.344a32 32 0 0 1-45.312 45.312l-288-288a32 32 0 0 1 0-45.312l288-288a32 32 0 1 1 45.312 45.312L237.248 512z" fill="#000000"></path>
+    </svg>
+  </div>
+  <p class="go-back-text">GO BACK</p>
+</button>
+
+<!-- Chat Container -->
+<div class="chat-box bubble-chatbx" id="chatContainer">
+</div>
+
+<!-- Input Field -->
+<div id="poda">
+  <div id="main">
+    <input placeholder="Type your message..." type="text" name="text" class="input" id="userInput"/>
+    <div id="search-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" viewBox="0 0 24 24" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" height="24" fill="none">
+        <circle stroke="currentColor" r="8" cy="11" cx="11"></circle>
+        <line stroke="currentColor" y2="16.65" y1="22" x2="16.65" x1="22"></line>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script>
+  // -----------------------
+  // Basic UI handlers
+  // -----------------------
+  document.getElementById('goBackBtn').addEventListener('click', () => {
+    window.location.href = 'https://www.isspilimbergo.edu.it/';
+  });
+
+  // -----------------------
+  // Rasa + SSE config
+  // -----------------------
+  const rasaHost = "http://172.23.64.150:5005";
+  const sseStreamUrl = "http://127.0.0.1:5006/stream";
+  const userId = "user-123";
+
+  const chatContainer = document.getElementById("chatContainer");
+  const userInput = document.getElementById("userInput");
+
+  let activeBotBubble = null;
+  let currentBoldLevel = 0;
+  let isInBoldSection = false;
+  let buffer = '';
+  let autoScrollEnabled = true;
+
+  // -----------------------
+  // Gestione scroll dinamica
+  // -----------------------
+  chatContainer.addEventListener('scroll', () => {
+    const isAtBottom = chatContainer.scrollHeight - chatContainer.clientHeight <= chatContainer.scrollTop + 10;
+    autoScrollEnabled = isAtBottom;
+  });
+
+  function smartScrollToBottom() {
+    if (autoScrollEnabled) {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+  }
+
+  // -----------------------
+  // Text processing functions
+  // -----------------------
+  function processTextForFormatting(text) {
+    let result = '';
+    let i = 0;
+    
+    while (i < text.length) {
+      // Check for asterisks
+      if (text[i] === '*') {
+        let asteriskCount = 0;
+        while (i < text.length && text[i] === '*') {
+          asteriskCount++;
+          i++;
+        }
+        
+        // Toggle bold state based on asterisk count
+        if (isInBoldSection) {
+          result += '</span>';
+          isInBoldSection = false;
+          currentBoldLevel = 0;
+        } else {
+          currentBoldLevel = Math.min(asteriskCount, 4);
+          result += `<span class="bold-${currentBoldLevel}">`;
+          isInBoldSection = true;
+        }
+      } 
+      // Check for period to add line break
+      else if (text[i] === '.') {
+        result += '.<br>';
+        i++;
+      } 
+      // Regular character
+      else {
+        result += text[i];
+        i++;
+      }
+    }
+    
+    return result;
+  }
+
+  // -----------------------
+  // Chat bubble helpers
+  // -----------------------
+  function addUserMessage(text) {
+    const div = document.createElement("div");
+    div.classList.add("bubble", "right");
+    div.textContent = text;
+    chatContainer.appendChild(div);
+    smartScrollToBottom();
+  }
+
+  function createBotBubble() {
+    const div = document.createElement("div");
+    div.classList.add("bubble", "left");
+    div.innerHTML = "";
+    chatContainer.appendChild(div);
+    smartScrollToBottom();
+    return div;
+  }
+
+  // -----------------------
+  // SSE Connection
+  // -----------------------
+  const evtSource = new EventSource(sseStreamUrl);
+
+  evtSource.onmessage = (event) => {
+    if (!event.data) return; // skip empty heartbeat
+
+    try {
+      const data = JSON.parse(event.data);
+      const token = data.token || data.response; // handle both keys
+      if (token) {
+        if (!activeBotBubble) {
+          activeBotBubble = createBotBubble(); // fallback if bubble missing
+        }
+        
+        // Add to buffer and process
+        buffer += token;
+        
+        // Process the buffer for formatting
+        const formattedText = processTextForFormatting(buffer);
+        
+        // Update the bubble with formatted text
+        activeBotBubble.innerHTML = formattedText;
+        smartScrollToBottom();
+      }
+    } catch (err) {
+      console.error("Invalid JSON from SSE:", event.data);
+    }
+  };
+
+  evtSource.onerror = (err) => {
+    console.warn("SSE error:", err);
+  };
+
+  // -----------------------
+  // Send message to Rasa
+  // -----------------------
+  async function sendMessageToRasa(message) {
+    try {
+      const response = await fetch(`${rasaHost}/webhooks/rest/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender: userId, message })
+      });
+      return await response.json();
+    } catch (err) {
+      console.error("Rasa fetch error:", err);
+      return null;
+    }
+  }
+
+  async function handleSend() {
+    const message = userInput.value.trim();
+    if (!message) return;
+
+    // Add user message
+    addUserMessage(message);
+    userInput.value = "";
+
+    // Create a new bot bubble BEFORE sending the message
+    activeBotBubble = createBotBubble();
+    
+    // Reset formatting state for new message
+    currentBoldLevel = 0;
+    isInBoldSection = false;
+    buffer = '';
+    
+    // Riabilita auto-scroll per nuovo messaggio
+    autoScrollEnabled = true;
+
+    // Send message to Rasa (tokens will stream to SSE)
+    await sendMessageToRasa(message);
+  }
+
+  // -----------------------
+  // Event listeners
+  // -----------------------
+  userInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") handleSend();
+  });
+
+  document.getElementById("search-icon").addEventListener("click", handleSend);
+</script>
+
+</body>
+</html>
